@@ -1,0 +1,51 @@
+{
+    "testName": "store",
+    "threads": [
+        {
+            "workgroup": 0,
+            "actions": [
+                {
+                    "action": "write",
+                    "memoryLocation": "x",
+                    "value": 2,
+		    "memoryOrder": "relaxed"
+                },
+                {
+                    "action": "write",
+                    "memoryLocation": "y",
+                    "value": 1,
+		    "memoryOrder": "release"
+                }
+            ]
+        },
+        {
+            "workgroup": 1,
+            "actions": [
+                {
+                    "action": "read",
+                    "memoryLocation": "y",
+                    "variable": "r0",
+		    "memoryOrder": "acquire"
+                },
+                {
+                    "action": "write",
+                    "memoryLocation": "x",
+                    "value": 1,
+		    "memoryOrder": "relaxed"
+                }
+            ]
+        }
+    ],
+    "postConditions": [
+        {
+            "type": "memory",
+            "id": "x",
+            "value": 2
+        },
+        {
+            "type": "variable",
+            "id": "r0",
+            "value": 1
+        }
+    ]
+}

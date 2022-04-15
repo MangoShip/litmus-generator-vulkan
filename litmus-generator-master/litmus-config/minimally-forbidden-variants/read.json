@@ -1,0 +1,51 @@
+{
+    "testName": "read",
+    "threads": [
+        {
+            "workgroup": 0,
+            "actions": [
+                {
+                    "action": "write",
+                    "memoryLocation": "x",
+                    "value": 1,
+		    "memoryOrder": "sc"
+                },
+                {
+                    "action": "write",
+                    "memoryLocation": "y",
+                    "value": 1,
+		    "memoryOrder": "sc"
+                }
+            ]
+        },
+        {
+            "workgroup": 1,
+            "actions": [
+                {
+                    "action": "write",
+                    "memoryLocation": "y",
+                    "value": 2,
+		    "memoryOrder": "sc"
+                },
+                {
+                    "action": "read",
+                    "memoryLocation": "x",
+                    "variable": "r0",
+		    "memoryOrder": "sc"
+                }
+            ]
+        }
+    ],
+    "postConditions": [
+        {
+            "type": "memory",
+            "id": "y",
+            "value": 2
+        },
+        {
+            "type": "variable",
+            "id": "r0",
+            "value": 0
+        }
+    ]
+}

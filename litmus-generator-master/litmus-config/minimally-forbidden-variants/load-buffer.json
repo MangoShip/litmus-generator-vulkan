@@ -1,0 +1,51 @@
+{
+    "testName": "load-buffer",
+    "threads": [
+        {
+            "workgroup": 0,
+            "actions": [
+                {
+                    "action": "read",
+                    "memoryLocation": "y",
+                    "variable": "r0",
+		    "memoryOrder": "acquire"
+                },
+                {
+                    "action": "write",
+                    "memoryLocation": "x",
+                    "value": 1,
+		    "memoryOrder": "release"
+                }
+            ]
+        },
+        {
+            "workgroup": 1,
+            "actions": [
+                {
+                    "action": "read",
+                    "memoryLocation": "x",
+                    "variable": "r1",
+		    "memoryOrder": "acquire"
+                },
+                {
+                    "action": "write",
+                    "memoryLocation": "y",
+                    "value": 1,
+		    "memoryOrder": "release"
+                }
+            ]
+        }
+    ],
+    "postConditions": [
+        {
+            "type": "variable",
+            "id": "r0",
+            "value": 1
+        },
+        {
+            "type": "variable",
+            "id": "r1",
+            "value": 1
+        }
+    ]
+}

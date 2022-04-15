@@ -1,0 +1,21 @@
+{
+    "testIterations": 1000,
+    "maxWorkgroups": 36,
+    "maxWorkgroupSize": 1024,
+    "testMemorySize": 1024,
+    "scratchMemorySize": 4096,
+    "shufflePct": 100,
+    "barrierPct": 85,
+    "memStride": 64,
+    "memStressPct": 100,
+    "stressLineSize": 256,
+    "stressTargetLines": 2,
+    "stressAssignmentStrategy": "ROUND_ROBIN",
+    "memStressPattern": ["store", "load"],
+    "memStressIterations": 1000,
+    "preStressPct": 100,
+    "preStressPattern": ["load", "load"],
+    "preStressIterations": 100,
+    "gpuDeviceId": 7857
+}
+
