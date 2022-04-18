@@ -63,7 +63,7 @@ class VulkanLitmusTest(litmustest.LitmusTest):
         suffix = []
         if len(self.threads) > 1:
             if self.same_workgroup:
-                suffix = ["uint id_1 = {}".format(new_local_id)]
+                suffix = ["uint id_1 = {};".format(new_local_id)]
             else:
                 suffix = [
                     "uint new_workgroup = stripe_workgroup(shuffled_workgroup, get_local_id(0), stress_params[9]);",
@@ -106,7 +106,7 @@ class VulkanLitmusTest(litmustest.LitmusTest):
         return "\n".join(permute_fn + stripe_fn)
 
     def generate_meta(self):
-        return "\n\n".join([self.generate_helper_fns()])
+        return "".join([self.generate_helper_fns()])
 
     def generate_stress(self):
         body = ["static void do_stress(__global uint* scratchpad, __global uint* scratch_locations, uint iterations, uint pattern) {",
@@ -138,18 +138,39 @@ class VulkanLitmusTest(litmustest.LitmusTest):
         return "\n".join([body, "}"])
 
     def read_repr(self, instr, i):
-        # set up rmw
-        template = "uint {} = atomic_load_explicit(&test_locations[{}_{}], {});"
-        return template.format(instr.variable, instr.mem_loc, i, self.openCL_mem_order[instr.mem_order])
+        if self.workgroup_memory:
+            loc = "wg_test_locations"
+        else:
+            loc = "test_locations"
+        if instr.use_rmw:
+            template = "uint {} = atomic_fetch_add_explicit(&{}[{}_{}], 0, {});"
+        else:
+            template = "uint {} = atomic_load_explicit(&{}[{}_{}], {});"
+        return template.format(instr.variable, loc, instr.mem_loc, i, self.openCL_mem_order[instr.mem_order])
 
     def write_repr(self, instr, i):
-        # set up rmw
-        template = "atomic_store_explicit(&test_locations[{}_{}], {}, {});"
-        return template.format(instr.mem_loc, i, instr.value, self.openCL_mem_order[instr.mem_order])
+        if self.workgroup_memory:
+            loc = "wg_test_locations"
+        else:
+            loc = "test_locations"
+        if instr.use_rmw:
+            template = "uint unused = atomic_exchange_explicit(&{}[{}_{}], {}, {});"
+        else:
+            template = "atomic_store_explicit(&{}[{}_{}], {}, {});"
+        return template.format(loc, instr.mem_loc, i, instr.value, self.openCL_mem_order[instr.mem_order])
 
     def fence_repr(self, instr):
-        # Should fence have memory_order_seq_cst?
-        return "atomic_work_item_fence(CLK_GLOBAL_MEM_FENCE, memory_order_seq_cst, memory_scope_device);"
+        if self.workgroup_memory:
+            return "atomic_work_item_fence(CLK_LOCAL_MEM_FENCE, memory_order_seq_cst, memory_scope_device);"
+        else:
+            return "atomic_work_item_fence(CLK_GLOBAL_MEM_FENCE, memory_order_seq_cst, memory_scope_device);"
+        
+
+    def barrier_repr(self, instr):
+        if self.workgroup_memory:
+            return "atomic_work_item_fence(CLK_LOCAL_MEM_FENCE, memory_order_seq_cst, memory_scope_device);"
+        else:
+            return "atomic_work_item_fence(CLK_GLOBAL_MEM_FENCE, memory_order_seq_cst, memory_scope_device);"
 
     def results_repr(self, variable, i):
         if variable == "r0":
@@ -158,7 +179,7 @@ class VulkanLitmusTest(litmustest.LitmusTest):
             result_template = " + 1"
         return "atomic_store(&read_results[id_{}*2{}], {});".format(i, result_template, variable)
 
-    # Find purpose of this 
+    # TO-DO: Find Purpose of this 
     def thread_filter(self, first_thread, workgroup, thread):
         if first_thread:
             start = "if"
@@ -174,7 +195,7 @@ class VulkanLitmusTest(litmustest.LitmusTest):
         ]
 
     def generate_shader_def(self):
-        return "\n".join([
+        kernel_header = [
             "__kernel void litmus_test (",
             "  __global atomic_uint* test_locations,",
             "  __global atomic_uint* read_results,",
@@ -183,12 +204,14 @@ class VulkanLitmusTest(litmustest.LitmusTest):
             "  __global uint* scratchpad,",
             "  __global uint* scratch_locations,",
             "  __global uint* stress_params) {",
-            "  uint shuffled_workgroup = shuffled_workgroups[get_group_id(0)];",
-            "  if(shuffled_workgroup < stress_params[9]) {"
-        ])
+        ]
+        if self.workgroup_memory:
+            kernel_header += ["  __local atomic_uint wg_test_locations[3584];"]
+        kernel_header += ["  uint shuffled_workgroup = shuffled_workgroups[get_group_id(0)];", "  if(shuffled_workgroup < stress_params[9]) {"]
+        return "\n".join(kernel_header)
 
     def generate_result_storage(self):
-        statements = ["atomic_work_item_fence(CLK_GLOBAL_MEM_FENCE, memory_order_seq_cst, memory_scope_device);"]
+        statements = ["atomic_work_item_fence(CLK_LOCAL_MEM_FENCE, memory_order_seq_cst, memory_scope_device);"]
         seen_ids = set()
         for behavior in self.behaviors:
             statements += self.generate_post_condition_stores(behavior.post_condition, seen_ids)
@@ -213,8 +236,7 @@ class VulkanLitmusTest(litmustest.LitmusTest):
                     result.append("atomic_store(&read_results[{}id_{}*2{}], {});".format(shift, self.read_threads[variable], result_template, variable))
                 elif condition.output_type == "memory" and self.workgroup_memory:
                     mem_loc = "{}_{}".format(condition.identifier, len(self.threads) - 1)
-                    # wg_test_locations?
-                    result.append("atomic_store(&test_locations[{} * stress_params[10] * 2 + {}], atomic_load(&wg_test_locations[{}]));".format(shift_mem_loc, mem_loc, mem_loc))
+                    result.append("atomic_store_explicit(&test_locations[{} * stress_params[10] * 2 + {}], atomic_load_explicit(&wg_test_locations[{}]));".format(shift_mem_loc, mem_loc, mem_loc))
         elif isinstance(condition, self.PostConditionNode):
             for cond in condition.conditions:
                 result += self.generate_post_condition_stores(cond, seen_ids)

@@ -55,27 +55,26 @@ __kernel void litmus_test (
   __global uint* stress_params) {
   uint shuffled_workgroup = shuffled_workgroups[get_group_id(0)];
   if(shuffled_workgroup < stress_params[9]) {
-    uint total_ids = get_local_size(0) * stress_params[9];
-    uint id_0 = shuffled_workgroup * get_local_size(0) + get_local_id(0);
-    uint new_workgroup = stripe_workgroup(shuffled_workgroup, get_local_id(0), stress_params[9]);
-    uint id_1 = new_workgroup * get_local_size(0) + permute_id(get_local_id(0), stress_params[7], get_local_size(0));
-    uint x_0 = (id_0) * stress_params[10] * 2;
-    uint y_0 = (permute_id(id_0, stress_params[8], total_ids)) * stress_params[10] * 2 + stress_params[11];
-    uint y_1 = (permute_id(id_1, stress_params[8], total_ids)) * stress_params[10] * 2 + stress_params[11];
-    uint x_1 = (id_1) * stress_params[10] * 2;
+    uint total_ids = get_local_size(0);
+    uint id_0 = get_local_id(0);
+    uint id_1 = permute_id(get_local_id(0), stress_params[7], get_local_size(0));
+    uint x_0 = (shuffled_workgroup * get_local_size(0) + id_0) * stress_params[10] * 2;
+    uint y_0 = (shuffled_workgroup * get_local_size(0) + permute_id(id_0, stress_params[8], total_ids)) * stress_params[10] * 2 + stress_params[11];
+    uint y_1 = (shuffled_workgroup * get_local_size(0) + permute_id(id_1, stress_params[8], total_ids)) * stress_params[10] * 2 + stress_params[11];
+    uint x_1 = (shuffled_workgroup * get_local_size(0) + id_1) * stress_params[10] * 2;
     if (stress_params[4]) {
       do_stress(scratchpad, scratch_locations, stress_params[5], stress_params[6]);
     }
     if (stress_params[0]) {
-      spin(barrier, get_local_size(0) * stress_params[9]);
+      spin(barrier, get_local_size(0));
     }
     atomic_store_explicit(&test_locations[x_0], 1, memory_order_relaxed);
     atomic_store_explicit(&test_locations[y_0], 1, memory_order_relaxed);
     uint r0 = atomic_load_explicit(&test_locations[y_1], memory_order_relaxed);
     uint r1 = atomic_load_explicit(&test_locations[x_1], memory_order_relaxed);
     atomic_work_item_fence(CLK_LOCAL_MEM_FENCE, memory_order_seq_cst, memory_scope_device);
-    atomic_store(&read_results[id_1*2], r0);
-    atomic_store(&read_results[id_1*2 + 1], r1);
+    atomic_store(&read_results[shuffled_workgroup * get_local_size(0) + id_1*2], r0);
+    atomic_store(&read_results[shuffled_workgroup * get_local_size(0) + id_1*2 + 1], r1);
   } else if (stress_params[1]) {
     do_stress(scratchpad, scratch_locations, stress_params[2], stress_params[3]);
   }
