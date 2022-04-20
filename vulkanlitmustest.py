@@ -211,7 +211,7 @@ class VulkanLitmusTest(litmustest.LitmusTest):
         return "\n".join(kernel_header)
 
     def generate_result_storage(self):
-        statements = ["atomic_work_item_fence(CLK_LOCAL_MEM_FENCE, memory_order_seq_cst, memory_scope_device);"]
+        statements = []
         seen_ids = set()
         for behavior in self.behaviors:
             statements += self.generate_post_condition_stores(behavior.post_condition, seen_ids)
