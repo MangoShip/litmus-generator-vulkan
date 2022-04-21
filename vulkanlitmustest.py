@@ -108,6 +108,9 @@ class VulkanLitmusTest(litmustest.LitmusTest):
     def generate_meta(self):
         return "".join([self.generate_helper_fns()])
 
+    def generate_result_meta(self):
+        return ""
+
     def generate_stress(self):
         body = ["static void do_stress(__global uint* scratchpad, __global uint* scratch_locations, uint iterations, uint pattern) {",
                 "for (uint i = 0; i < iterations; i++) {"]
@@ -173,11 +176,15 @@ class VulkanLitmusTest(litmustest.LitmusTest):
             return "atomic_work_item_fence(CLK_GLOBAL_MEM_FENCE, memory_order_seq_cst, memory_scope_device);"
 
     def results_repr(self, variable, i):
+        if self.same_workgroup:
+            shift_mem_loc = "shuffled_workgroup * get_local_size(0) + "
+        else:
+            shift_mem_loc = ""
         if variable == "r0":
             result_template = ""
         else:
             result_template = " + 1"
-        return "atomic_store(&read_results[id_{}*2{}], {});".format(i, result_template, variable)
+        return "atomic_store(&read_results[{}id_{}*2{}], {});".format(shift_mem_loc, i, result_template, variable)
 
     # TO-DO: Find Purpose of this 
     def thread_filter(self, first_thread, workgroup, thread):
@@ -194,6 +201,15 @@ class VulkanLitmusTest(litmustest.LitmusTest):
             "  }"
         ]
 
+    def generate_common_shader_def(self):
+      return [
+            "__kernel void litmus_test(",
+            "  __global atomic_uint* test_locations,",
+            "  __global atomic_uint* read_results,",
+            "  __global atomic_uint* test_results,",
+            "  __global uint* stress_params) {",
+      ]
+
     def generate_shader_def(self):
         kernel_header = [
             "__kernel void litmus_test (",
@@ -209,6 +225,29 @@ class VulkanLitmusTest(litmustest.LitmusTest):
             kernel_header += ["  __local atomic_uint wg_test_locations[3584];"]
         kernel_header += ["  uint shuffled_workgroup = shuffled_workgroups[get_group_id(0)];", "  if(shuffled_workgroup < stress_params[9]) {"]
         return "\n".join(kernel_header)
+
+    def generate_result_shader_def(self):
+        # Is total_ids needed?
+        if self.same_workgroup:
+            total_ids = "  uint total_ids = get_local_size(0);"
+        else:
+            total_ids = "  uint total_ids = get_local_size(0) * stress_params[9];"
+        return "\n".join(self.generate_common_shader_def() + [
+          total_ids,
+          "  uint id_0 = get_global_id(0);"
+        ])
+
+    def generate_post_condition(self, condition):
+        if isinstance(condition, self.PostConditionLeaf):
+            template = ""
+            if condition.output_type == "variable":
+                template = "{} == {}"
+            elif condition.output_type == "memory":
+                template = "mem_{}_0 == {}u"
+            return template.format(condition.identifier, condition.value)
+        elif isinstance(condition, self.PostConditionNode):
+            if condition.operator == "and":
+                return "(" + " && ".join([self.generate_post_condition(cond) for cond in condition.conditions]) + ")"
 
     def generate_result_storage(self):
         statements = []
@@ -241,3 +280,49 @@ class VulkanLitmusTest(litmustest.LitmusTest):
             for cond in condition.conditions:
                 result += self.generate_post_condition_stores(cond, seen_ids)
         return result
+
+    def generate_post_condition_loads(self, condition, seen_ids):
+        result = []
+        if isinstance(condition, self.PostConditionLeaf):
+            if condition.identifier not in seen_ids:
+                seen_ids.add(condition.identifier)
+                if condition.output_type == "variable":
+                    if condition.identifier == "r0":
+                        result_template = ""
+                    else:
+                        result_template = " + 1"
+                    result.append("uint {} = atomic_load(&read_results[id_0 * 2{}]);".format(condition.identifier, result_template))
+                elif condition.output_type == "memory":
+                    shift = False
+                    use_local_id = False
+                    if self.same_workgroup:
+                        use_local_id = True
+                        if self.variable_offsets[condition.identifier] > 0:
+                            shift = True
+                    result.append(self.generate_mem_loc(condition.identifier, 0, self.variable_offsets[condition.identifier], shift, "workgroup_id[0]", use_local_id))
+                    var = "{}_0".format(condition.identifier)
+                    result.append("uint mem_{} = atomic_load(&test_locations.value[{}]);".format(var, var))
+        elif isinstance(condition, self.PostConditionNode):
+            for cond in condition.conditions:
+                result += self.generate_post_condition_loads(cond, seen_ids)
+        return result
+
+    def generate_result_shader_body(self):
+        first_behavior = True
+        statements = []
+        seen_ids = set()
+        index = 0
+        for behavior in self.behaviors:
+            statements += self.generate_post_condition_loads(behavior.post_condition, seen_ids)
+        for behavior in self.behaviors:
+            condition = self.generate_post_condition(behavior.post_condition)
+            if first_behavior:
+                template = "if ({}) {{"
+            else:
+                template = "}} else if ({}) {{"
+            statements.append(template.format(condition))
+            statements.append("  atomic_fetch_add(&test_results[{}], 1);".format(index))
+            first_behavior = False
+            index += 1
+        statements.append("}")
+        return statements
