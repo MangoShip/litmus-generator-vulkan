@@ -186,14 +186,6 @@ class VulkanLitmusTest(litmustest.LitmusTest):
             result_template = " + 1"
         return "atomic_store(&read_results[{}id_{}*2{}], {});".format(shift_mem_loc, i, result_template, variable)
 
-    # TO-DO: Find Purpose of this 
-    def thread_filter(self, first_thread, workgroup, thread):
-        if first_thread:
-            start = "if"
-        else:
-            start = "} else if"
-        return start + " (shuffled_ids[get_global_id(0)] == get_local_size(0) * {} + {}) {{".format(workgroup, thread)
-
     def generate_stress_call(self):
         return [
             "  } else if (stress_params[1]) {",
